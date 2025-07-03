@@ -13,7 +13,7 @@ file <- "C:\\Social Brain Lab\\VALAWAI\\Behavioural R\\Study Trust.csv"
 data <- read.csv(file = file, sep = ",")
 data <- data[-c(1:89), ]
 
-# Eliminar los participantes que contestaron mal a los AttentionChecks
+# Delete participats that did not pay attention
 data_filtrada <- data %>%
   filter(if_all(26:38, ~ is.na(.) | . == "") | AttentionCheck2 == 5) %>% select(19,20:21,23,39:177)
 ```
@@ -30,13 +30,13 @@ bloques <- list(
   NMR = c("Acuerdo5_NMR", "Acuerdo6_NMR", "Acuerdo7_NMR", "Acuerdo8_NMR")
 )
 
-# Convertir las columnas de "Acuerdo" a numérico
+# "Acuerdo" to numeric
 for (bloque in names(bloques)) {
   acuerdo_cols <- bloques[[bloque]]
   data_filtrada[acuerdo_cols] <- lapply(data_filtrada[acuerdo_cols], as.numeric)
 }
 
-# Seleccionar y convertir las columnas restantes a numérico
+# Select y convert the rets to numeric
 cols_to_convert <- data_filtrada %>%
   select(starts_with("Reliability"), starts_with("MoralAgency"),
          starts_with("MoralTrust"), starts_with("IS_"), starts_with("Complejidad"), starts_with("Antro")) %>%
@@ -44,19 +44,18 @@ cols_to_convert <- data_filtrada %>%
 
 data_filtrada[cols_to_convert] <- lapply(data_filtrada[cols_to_convert], as.numeric)
 
-#Convertir Direction a numérico (Direct == 0, Inverse == 1)
+#Convert Direction to numeric (Direct == 0, Inverse == 1)
 data_filtrada <- data_filtrada %>%
   mutate(across(
     starts_with("Direction_"), 
     ~ ifelse(. == "Direct", 0, ifelse(. == "Inverse", 1, NA_real_))
   ))
 
-#Invertir la puntuación 
-# Seleccionar las columnas que contienen "IS" y "Direction"
+#Reverse score
 matriz_IS <- data_filtrada %>% select(contains("IS"))
 matriz_direction <- data_filtrada %>% select(contains("Direction"))
 
-# Ajustar las puntuaciones de IS (si Direction es 1, - a 100)
+# Adjust scores (if Direction == 1, - to 100)
 matriz_IS_adjusted <- matriz_IS
 for (i in 1:ncol(matriz_IS)) {
   matriz_IS_adjusted[[i]] <- ifelse(matriz_direction[[i]] == 1, 
@@ -69,11 +68,10 @@ data2_filtered <- data_filtrada %>%
 combined_data <- bind_cols(data2_filtered, matriz_IS_adjusted)
 
 
-#Limpiar nombre de las columnas IS_ y Direction_
+#Cleaning
 colnames(combined_data) <- colnames(combined_data) %>%
   gsub("_1$", "", .) 
 
-#Renombrar las columnas correctamente
 combined_data <- combined_data %>%
   rename(IS_UR_1 = IS_UR_1.)
 combined_data <- combined_data %>%
@@ -81,7 +79,7 @@ combined_data <- combined_data %>%
 
 colnames(combined_data)
 
-# Calcular media acuerdo
+# Mean "Acuerdo"
 data_media_acuerdo <- combined_data %>%
   mutate(
     media_acuerdo_UP = rowMeans(select(., all_of(bloques$UP)), na.rm = TRUE),
@@ -94,7 +92,7 @@ data_media_acuerdo <- combined_data %>%
     media_acuerdo_NMR = rowMeans(select(., all_of(bloques$NMR)), na.rm = TRUE)
   )
 
-#Calcular media IS
+#Mean "IS"
 data_media_IS <- data_media_acuerdo %>%
   mutate(
     media_IS_UR = rowMeans(select(., starts_with("IS") & ends_with("UR")), na.rm = TRUE),
@@ -103,7 +101,7 @@ data_media_IS <- data_media_acuerdo %>%
     media_IS_NMR = rowMeans(select(., starts_with("IS") & ends_with("NMR")), na.rm = TRUE)
   )
 
-#Eliminamos columnas innecesarias
+#Delete unnecessary columns
 data_cleaned <- data_media_IS %>%
   select(-c(78:111))
 ```
@@ -228,13 +226,10 @@ library(dplyr)
 library(tidyr)
 library(purrr)
 
-# Lista de grupos para variables con 8 niveles
 grupos_todos <- c("UP", "UR", "CP", "CR", "DP", "DR", "NMP", "NMR")
 
-# Lista de grupos para variables con solo 4 niveles
 grupos_reducidos <- c("UR", "CR", "DR", "NMR")
 
-# Asignar correctamente 'Group' según la variable
 add_group <- function(df, group_list) {
   df %>%
     group_by(identity) %>%
@@ -242,7 +237,6 @@ add_group <- function(df, group_list) {
     ungroup()
 }
 
-# Transformaciones de las variables con 8 grupos
 df_reliability <- data_cleaned %>%
   select(identity, starts_with("Reliability")) %>%
   pivot_longer(cols = starts_with("Reliability"), names_to = "Scale", values_to = "Reliability") %>%
@@ -273,7 +267,6 @@ df_agreement <- data_cleaned %>%
   add_group(grupos_todos) %>%
   select(-Scale)
 
-# Transformaciones de las variables con 4 grupos
 df_antroH <- data_cleaned %>%
   select(identity, starts_with("AntroH")) %>%
   pivot_longer(cols = starts_with("AntroH"), names_to = "Scale", values_to = "AntroH") %>%
@@ -292,17 +285,15 @@ df_IS <- data_cleaned %>%
   add_group(grupos_reducidos) %>%
   select(-Scale)
 
-# Crear la base de identidad con todas las combinaciones
 base_identity <- expand_grid(
   identity = unique(data_cleaned$identity),
   Group = grupos_todos
 )
 
-# Asegurar que cada dataframe tenga todas las combinaciones posibles
 merge_list <- list(df_reliability, df_agency, df_trust, df_complexity, df_agreement, df_antroH, df_antroR, df_IS)
 merge_list <- map(merge_list, ~ full_join(base_identity, .x, by = c("identity", "Group")))
 
-# Merge final
+# Merge 
 df_combined <- reduce(merge_list, full_join, by = c("identity", "Group")) %>%
   arrange(identity, Group)
 
@@ -340,7 +331,7 @@ data_long <- df_combined %>%
 library(lmerTest)
 library(emmeans)
 
-# Ajustar el modelo mixto para la variable Reliability
+# Mixed Model for Reliability
 modelo_reliability <- lmer(Reliability ~ framework + type + acuerdo + (1 | identity), 
                             data = df_combined)
 summary(modelo_reliability)
@@ -360,10 +351,10 @@ library(dplyr)
 library(ggpubr)
 
 
-# Obtener los intervalos de confianza
+# CI
 summary(emmeans_moralreliability, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
 
-# Extraer la tabla de emmeans
+# Emmeans
 emtab <- emmeans(emmeans_moralreliability, ~ framework | type )
 emtab <- as_tibble(emtab)
 
@@ -375,7 +366,7 @@ type_colors <- c(
 emtab <- regrid(emmeans(emmeans_moralreliability, ~ framework | type)) %>%
   as_tibble()
 
-# Graficar con límites de 1 a 7 en el eje y
+# Graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -386,7 +377,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
   scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 
-#Grafico aumentado
+#Aumented Graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -399,7 +390,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
 
 #Moral Trust
 ```{r}
-# Ajustar el modelo mixto para la variable MoralTrust
+# Mixed Model for MoralTrust
 modelo_moraltrust <- lmer(MoralTrust ~ framework + type + acuerdo + (1 | identity), 
                             data = data_long)
 summary(modelo_moraltrust)
@@ -414,10 +405,10 @@ emmeans_moraltrust <- emmeans(int_moraltrust, pairwise ~ type | framework)
 summary(emmeans_moraltrust)
 confint(emmeans_moraltrust, level = 0.95)
 
-# Obtener los intervalos de confianza
+# CI
 summary(emmeans_moraltrust, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
 
-# Extraer la tabla de emmeans
+# Emmeans
 emtab <- emmeans(emmeans_moraltrust, ~ framework | type )
 emtab <- as_tibble(emtab)
 
@@ -429,7 +420,7 @@ type_colors <- c(
 emtab <- regrid(emmeans(emmeans_moraltrust, ~ framework | type)) %>%
   as_tibble()
 
-# Graficar con límites de 1 a 7 en el eje y
+# Graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -440,7 +431,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
   scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 
-#Gràfico aumentado
+#Aumented graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -453,7 +444,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
 
 #Moral Agency
 ```{r}
-# Ajustar el modelo mixto para la variable MoralAgency
+# Miex model for MoralAgency
 modelo_moralagency <- lmer(MoralAgency ~ framework + type + acuerdo + (1 | identity), 
                             data = data_long)
 summary(modelo_moralagency)
@@ -466,10 +457,10 @@ summary(int_moralagency)
 emmeans_moralagency <- emmeans(int_moralagency, pairwise ~ framework | type)
 summary(emmeans_moralagency)
 
-# Obtener los intervalos de confianza
+# CI
 summary(emmeans_moralagency, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
 
-# Extraer la tabla de emmeans
+# Emmeans
 emtab <- emmeans(emmeans_moralagency, ~ framework | type )
 emtab <- as_tibble(emtab)
 
@@ -481,7 +472,7 @@ type_colors <- c(
 emtab <- regrid(emmeans(emmeans_moralagency, ~ framework | type)) %>%
   as_tibble()
 
-# Graficar con límites de 1 a 7 en el eje y
+# Graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -492,7 +483,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
   scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 
-#Gràfico aumentado
+#Aumented graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -508,7 +499,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
 data_long$Complexity <- as.numeric(data_long$Complexity)
 df_combined$Complexity <- as.numeric(df_combined$Complexity)
 
-# Ajustar el modelo mixto para la variable Complejidad
+# Mixed model Complexity
 modelo_Complejidad <- lmer(Complexity ~ framework + type + acuerdo + (1 | identity), 
                             data = df_combined)
 summary(modelo_Complejidad)
@@ -521,10 +512,10 @@ summary(int_Complejidad)
 emmeans_moralcomplejidad <- emmeans(int_Complejidad, pairwise ~ framework | type)
 summary(emmeans_moralcomplejidad)
 
-# Obtener los intervalos de confianza
+# CI
 summary(emmeans_moralcomplejidad, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
 
-# Extraer la tabla de emmeans
+# Emmeans
 emtab <- emmeans(emmeans_moralcomplejidad, ~ framework | type )
 emtab <- as_tibble(emtab)
 
@@ -536,7 +527,7 @@ type_colors <- c(
 emtab <- regrid(emmeans(emmeans_moralcomplejidad, ~ framework | type)) %>%
   as_tibble()
 
-# Graficar con límites de 1 a 7 en el eje y
+# Graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -547,7 +538,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
   scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 
-#Gràfico aumentado
+#Aumented graph
 ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 position = position_dodge(0.5), width = 0.25) + 
@@ -561,7 +552,6 @@ ggplot(emtab, aes(x = framework, y = emmean, color = type)) +
 #IS
 ```{r}
 #Mean IS
-
 mean_IS <- df_combined %>%
   summarise(
     mean_IS = mean(IS, na.rm = TRUE),
@@ -570,7 +560,7 @@ mean_IS <- df_combined %>%
 summary(mean_IS)
 
 
-# Ajustar el modelo mixto para la variable IS
+# Mixed model for IS
 modelo_IS <- lmer(IS ~ framework + acuerdo + (1 | identity), 
                             data = df_combined)
 summary(modelo_IS)
@@ -583,17 +573,16 @@ summary(int_IS)
 emmeans_moralIS <- emmeans(modelo_IS, pairwise ~ framework)
 summary(emmeans_moralIS)
 
-# Obtener los resultados de emmeans
+# Emmeans
 emmeans_moralIS <- emmeans(int_IS, pairwise ~ framework)
 summary(emmeans_moralIS)
 
-# Obtener los intervalos de confianza
+# CI
 summary(emmeans_moralIS, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
 
-# Calcular emmeans por framework
+# Emmeans for framework
 emtab <- emmeans(emmeans_moralIS, ~ framework)
 
-# Transformar a escala original (si aplica)
 emtab <- regrid(emtab) %>% as_tibble()
 
 
@@ -602,7 +591,7 @@ type_colors <- c(
   "Robot" = "#4682B4"    
 )
 
-# Graficar sin usar 'type' y con escala de 0 a 100
+# Graph
 ggplot(emtab, aes(x = framework, y = emmean, color = "Robot")) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 width = 0.25) + 
@@ -615,7 +604,7 @@ ggplot(emtab, aes(x = framework, y = emmean, color = "Robot")) +
   scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 
-# Aumentado
+# Aumented graph
 ggplot(emtab, aes(x = framework, y = emmean, color = "Robot")) + 
   geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
                 width = 0.25) + 
@@ -628,12 +617,12 @@ ggplot(emtab, aes(x = framework, y = emmean, color = "Robot")) +
   theme(axis.text.x = element_text(angle = 0, hjust = 1))
 ```
 
-#Antropomorphism basic analysis
+#Anthropomorphism basic analysis
 ```{r}
 library(mediation)
 library(lavaan)
 
-#Efecto Antropomorfismo Humano
+#Anthropomorphism 
 modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
                       data = df_combined)
 summary(modelo_antroH)
@@ -654,7 +643,7 @@ summary(mediate_test)
 
 
 
-#Efecto Antropomorfismo Robot
+#Robotization
 modelo_antroR <- lmer(AntroR ~ framework + acuerdo + (1 | identity),
                       data = df_combined)
 summary(modelo_antroR)
@@ -678,7 +667,7 @@ summary(mediate_test_R)
 #Correlations Antropomorphism-direct variables
 ```{r}
 ###############################AntroH################################
-###Correlation controlando por framework
+###Controling by framework
 reliability_antroH <- lmer(Reliability ~ AntroH + framework + acuerdo + (1 | identity),
                       data = df_combined)
 summary(reliability_antroH)
@@ -731,7 +720,7 @@ IS_antroR <- lmer(IS ~ AntroR + framework + acuerdo + (1 | identity),
 summary(IS_antroR)
 confint(IS_antroR, level = 0.95)
 
-####Correlation sin contratoar por framework
+####Correlation without controling by framework 
 #Acuerdo AntroH
 cor.test(df_combined$acuerdo[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
 
@@ -783,17 +772,17 @@ cor_results <- data.frame(
   stringsAsFactors = FALSE
 )
 
-# Define the variables to correlate
+# Variables to correlate
 variables <- c("acuerdo", "Reliability", "MoralTrust", "MoralAgency", "Complexity", "IS")
 
-# Run correlations and store results
+# Run correlations
 run_correlation <- function(var, target) {
   test <- cor.test(df_combined[[var]][df_combined$type == "Robot"], 
                    df_combined[[target]][df_combined$type == "Robot"])
   return(data.frame(Variable = var, Correlation = test$estimate, Antro_Type = target))
 }
 
-# Run correlations for AntroH and AntroR
+# Correlations for AntroH and AntroR
 for (var in variables) {
   cor_results <- bind_rows(cor_results, run_correlation(var, "AntroH"))
   cor_results <- bind_rows(cor_results, run_correlation(var, "AntroR"))
