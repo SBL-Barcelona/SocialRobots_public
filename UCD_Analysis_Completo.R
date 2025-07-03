@@ -6,14 +6,14 @@ data <- read.csv(file = file, sep = ",")
 
 data <- data[-(1:2), ]
 
-# Eliminar los participantes que contestaron mal a los AttentionChecks
+# Delete participants that did not pay attention
 data_filtrada <- data %>%
   filter(if_all(26:38, ~ is.na(.) | . == "") | AttentionCheck2 == 2)
 
-#Seleccionar las columnas que representan los dilemas 
+#Select dilemmas 
 dilemas <- data_filtrada %>% select(39:64, 66:91) 
 
-# Crear un data frame con el nombre de cada dilema y el porcentaje de 1, 2 y 3
+# Percentage
 conteo_porcentajes <- dilemas %>%
   pivot_longer(everything(), names_to = "Dilema", values_to = "Porcentaje") %>%
   group_by(Dilema) %>%
