@@ -1,0 +1,1005 @@
+---
+title: "Untitled"
+author: "HELENA GIL BUITRAGO"
+date: "2025-02-11"
+output: html_document
+---
+#Library
+```{r}
+library(tidyverse)
+
+file <- "C:\\Social Brain Lab\\VALAWAI\\Behavioural R\\Study Trust.csv"
+
+data <- read.csv(file = file, sep = ",")
+data <- data[-c(1:89), ]
+
+# Eliminar los participantes que contestaron mal a los AttentionChecks
+data_filtrada <- data %>%
+  filter(if_all(26:38, ~ is.na(.) | . == "") | AttentionCheck2 == 5) %>% select(19,20:21,23,39:177)
+```
+#Cleaning and preparing data
+```{r}
+bloques <- list(
+  UP = c("Acuerdo1_UP", "Acuerdo2_UP", "Acuerdo3_UP", "Acuerdo4_UP"),
+  UR = c("Acuerdo5_UR", "Acuerdo6_UR", "Acuerdo7_UR", "Acuerdo8_UR"),
+  CP = c("Acuerdo1_CP", "Acuerdo2_CP", "Acuerdo3_CP", "Acuerdo4_CP"),
+  CR = c("Acuerdo5_CR", "Acuerdo6_CR", "Acuerdo7_CR", "Acuerdo8_CR"),
+  DP = c("Acuerdo1_DP", "Acuerdo2_DP", "Acuerdo3_DP", "Acuerdo4_DP"),
+  DR = c("Acuerdo5_DR", "Acuerdo6_DR", "Acuerdo7_DR", "Acuerdo8_DR"),
+  NMP = c("Acuerdo1_NMP", "Acuerdo2_NMP", "Acuerdo3_NMP", "Acuerdo4_NMP"),
+  NMR = c("Acuerdo5_NMR", "Acuerdo6_NMR", "Acuerdo7_NMR", "Acuerdo8_NMR")
+)
+
+# Convertir las columnas de "Acuerdo" a numérico
+for (bloque in names(bloques)) {
+  acuerdo_cols <- bloques[[bloque]]
+  data_filtrada[acuerdo_cols] <- lapply(data_filtrada[acuerdo_cols], as.numeric)
+}
+
+# Seleccionar y convertir las columnas restantes a numérico
+cols_to_convert <- data_filtrada %>%
+  select(starts_with("Reliability"), starts_with("MoralAgency"),
+         starts_with("MoralTrust"), starts_with("IS_"), starts_with("Complejidad"), starts_with("Antro")) %>%
+  colnames()
+
+data_filtrada[cols_to_convert] <- lapply(data_filtrada[cols_to_convert], as.numeric)
+
+#Convertir Direction a numérico (Direct == 0, Inverse == 1)
+data_filtrada <- data_filtrada %>%
+  mutate(across(
+    starts_with("Direction_"), 
+    ~ ifelse(. == "Direct", 0, ifelse(. == "Inverse", 1, NA_real_))
+  ))
+
+#Invertir la puntuación 
+# Seleccionar las columnas que contienen "IS" y "Direction"
+matriz_IS <- data_filtrada %>% select(contains("IS"))
+matriz_direction <- data_filtrada %>% select(contains("Direction"))
+
+# Ajustar las puntuaciones de IS (si Direction es 1, - a 100)
+matriz_IS_adjusted <- matriz_IS
+for (i in 1:ncol(matriz_IS)) {
+  matriz_IS_adjusted[[i]] <- ifelse(matriz_direction[[i]] == 1, 
+                                     100 - matriz_IS[[i]], 
+                                     matriz_IS[[i]])
+}
+
+data2_filtered <- data_filtrada %>%
+  select(-c(23:30, 49:56, 75:82, 101:108, 112:143))
+combined_data <- bind_cols(data2_filtered, matriz_IS_adjusted)
+
+
+#Limpiar nombre de las columnas IS_ y Direction_
+colnames(combined_data) <- colnames(combined_data) %>%
+  gsub("_1$", "", .) 
+
+#Renombrar las columnas correctamente
+combined_data <- combined_data %>%
+  rename(IS_UR_1 = IS_UR_1.)
+combined_data <- combined_data %>%
+  rename_with(~ gsub("IS_(.*)_(\\d+)", "IS\\2_\\1", .), starts_with("IS_"))
+
+colnames(combined_data)
+
+# Calcular media acuerdo
+data_media_acuerdo <- combined_data %>%
+  mutate(
+    media_acuerdo_UP = rowMeans(select(., all_of(bloques$UP)), na.rm = TRUE),
+    media_acuerdo_UR = rowMeans(select(., all_of(bloques$UR)), na.rm = TRUE),
+    media_acuerdo_CP = rowMeans(select(., all_of(bloques$CP)), na.rm = TRUE),
+    media_acuerdo_CR = rowMeans(select(., all_of(bloques$CR)), na.rm = TRUE),
+    media_acuerdo_DP = rowMeans(select(., all_of(bloques$DP)), na.rm = TRUE),
+    media_acuerdo_DR = rowMeans(select(., all_of(bloques$DR)), na.rm = TRUE),
+    media_acuerdo_NMP = rowMeans(select(., all_of(bloques$NMP)), na.rm = TRUE),
+    media_acuerdo_NMR = rowMeans(select(., all_of(bloques$NMR)), na.rm = TRUE)
+  )
+
+#Calcular media IS
+data_media_IS <- data_media_acuerdo %>%
+  mutate(
+    media_IS_UR = rowMeans(select(., starts_with("IS") & ends_with("UR")), na.rm = TRUE),
+    media_IS_CR = rowMeans(select(., starts_with("IS") & ends_with("CR")), na.rm = TRUE),
+    media_IS_DR = rowMeans(select(., starts_with("IS") & ends_with("DR")), na.rm = TRUE),
+    media_IS_NMR = rowMeans(select(., starts_with("IS") & ends_with("NMR")), na.rm = TRUE)
+  )
+
+#Eliminamos columnas innecesarias
+data_cleaned <- data_media_IS %>%
+  select(-c(78:111))
+```
+
+#Creating data_long
+```{r}
+Group <- rep(c("UP", "UR", "CP", "CR", 
+           "DP", "DR", "NMP", "NMR"), times = 249) 
+
+############################ Long Reliability ############################
+df_reliability <- data_cleaned %>%
+    select(identity, starts_with("Reliability")) %>%
+  pivot_longer(
+    cols = starts_with("Reliability"),  
+    names_to = "Scale",  
+    values_to = "Reliability"  
+  ) %>%
+  cbind(., Group) %>%
+select(-Scale)
+
+############################ Long Moral Agency ############################
+df_agency <- data_cleaned %>%
+    select(identity, starts_with("MoralAgency")) %>%
+  pivot_longer(
+    cols = starts_with("MoralAgency"),  
+    names_to = "Scale",  
+    values_to = "MoralAgency"  
+  ) %>%
+  cbind(., Group) %>%
+select(-Scale)
+
+############################ Long Moral Trust ############################
+df_trust <- data_cleaned %>%
+    select(identity, starts_with("MoralTrust")) %>%
+  pivot_longer(
+    cols = starts_with("MoralTrust"),  
+    names_to = "Scale",  
+    values_to = "MoralTrust"  
+  ) %>%
+  cbind(., Group) %>%
+select(-Scale)
+
+############################ Long Complexity ############################
+df_complexity <- data_cleaned %>%
+    select(identity, starts_with("Complexity")) %>%
+  pivot_longer(
+    cols = starts_with("Complexity"),  
+    names_to = "Scale",  
+    values_to = "Complexity"  
+  ) %>%
+  cbind(., Group) %>%
+select(-Scale)
+
+
+############################ Long agreement ############################
+df_agreement <- data_cleaned %>%
+    select(identity, starts_with("media_acuerdo")) %>%
+  pivot_longer(
+    cols = starts_with("media_acuerdo"),  
+    names_to = "Scale",  
+    values_to = "Acuerdo"  
+  ) %>%
+  cbind(., Group) %>%
+select(-Scale)
+
+
+Group_R <- rep(c("UR", "CR", "DR", "NMR"), times = 249) 
+############################ Long Antro ############################
+df_antroH <- data_cleaned %>%
+    select(identity, starts_with("AntroH")) %>%
+  pivot_longer(
+    cols = starts_with("AntroH"),  
+    names_to = "Scale",  
+    values_to = "AntroH"  
+  ) %>%
+  cbind(., Group_R) %>%
+select(-Scale)
+
+df_antroR <- data_cleaned %>%
+    select(identity, starts_with("AntroR")) %>%
+  pivot_longer(
+    cols = starts_with("AntroR"),  
+    names_to = "Scale",  
+    values_to = "AntroR"  
+  ) %>%
+  cbind(., Group_R) %>%
+select(-Scale)
+
+
+############################ Long Intentional Stance ############################
+df_IS <- data_cleaned %>%
+    select(identity, starts_with("media_IS")) %>%
+  pivot_longer(
+    cols = starts_with("media_IS"),  
+    names_to = "Scale",  
+    values_to = "IS"  
+  ) %>%
+  cbind(., Group_R) %>%
+select(-Scale)
+```
+
+#Alpha
+```{r}
+library(psych)
+head(df_IS)
+
+df_wide <- df_IS %>%
+  pivot_wider(names_from = Group_R, values_from = IS)
+
+df_wide <- df_wide %>%
+  select(UR, CR, DR, NMR) %>%
+  mutate(across(everything(), as.numeric))
+
+alpha_IS <- alpha(df_wide)
+summary(alpha_IS)
+```
+
+
+#Merge long_df
+```{r}
+library(dplyr)
+library(tidyr)
+library(purrr)
+
+# Lista de grupos para variables con 8 niveles
+grupos_todos <- c("UP", "UR", "CP", "CR", "DP", "DR", "NMP", "NMR")
+
+# Lista de grupos para variables con solo 4 niveles
+grupos_reducidos <- c("UR", "CR", "DR", "NMR")
+
+# Asignar correctamente 'Group' según la variable
+add_group <- function(df, group_list) {
+  df %>%
+    group_by(identity) %>%
+    mutate(Group = rep(group_list, length.out = n())) %>%
+    ungroup()
+}
+
+# Transformaciones de las variables con 8 grupos
+df_reliability <- data_cleaned %>%
+  select(identity, starts_with("Reliability")) %>%
+  pivot_longer(cols = starts_with("Reliability"), names_to = "Scale", values_to = "Reliability") %>%
+  add_group(grupos_todos) %>%
+  select(-Scale)
+
+df_agency <- data_cleaned %>%
+  select(identity, starts_with("MoralAgency")) %>%
+  pivot_longer(cols = starts_with("MoralAgency"), names_to = "Scale", values_to = "MoralAgency") %>%
+  add_group(grupos_todos) %>%
+  select(-Scale)
+
+df_trust <- data_cleaned %>%
+  select(identity, starts_with("MoralTrust")) %>%
+  pivot_longer(cols = starts_with("MoralTrust"), names_to = "Scale", values_to = "MoralTrust") %>%
+  add_group(grupos_todos) %>%
+  select(-Scale)
+
+df_complexity <- data_cleaned %>%
+  select(identity, starts_with("Complexity")) %>%
+  pivot_longer(cols = starts_with("Complexity"), names_to = "Scale", values_to = "Complexity") %>%
+  add_group(grupos_todos) %>%
+  select(-Scale)
+
+df_agreement <- data_cleaned %>%
+  select(identity, starts_with("media_acuerdo")) %>%
+  pivot_longer(cols = starts_with("media_acuerdo"), names_to = "Scale", values_to = "acuerdo") %>%
+  add_group(grupos_todos) %>%
+  select(-Scale)
+
+# Transformaciones de las variables con 4 grupos
+df_antroH <- data_cleaned %>%
+  select(identity, starts_with("AntroH")) %>%
+  pivot_longer(cols = starts_with("AntroH"), names_to = "Scale", values_to = "AntroH") %>%
+  add_group(grupos_reducidos) %>%
+  select(-Scale)
+
+df_antroR <- data_cleaned %>%
+  select(identity, starts_with("AntroR")) %>%
+  pivot_longer(cols = starts_with("AntroR"), names_to = "Scale", values_to = "AntroR") %>%
+  add_group(grupos_reducidos) %>%
+  select(-Scale)
+
+df_IS <- data_cleaned %>%
+  select(identity, starts_with("media_IS")) %>%
+  pivot_longer(cols = starts_with("media_IS"), names_to = "Scale", values_to = "IS") %>%
+  add_group(grupos_reducidos) %>%
+  select(-Scale)
+
+# Crear la base de identidad con todas las combinaciones
+base_identity <- expand_grid(
+  identity = unique(data_cleaned$identity),
+  Group = grupos_todos
+)
+
+# Asegurar que cada dataframe tenga todas las combinaciones posibles
+merge_list <- list(df_reliability, df_agency, df_trust, df_complexity, df_agreement, df_antroH, df_antroR, df_IS)
+merge_list <- map(merge_list, ~ full_join(base_identity, .x, by = c("identity", "Group")))
+
+# Merge final
+df_combined <- reduce(merge_list, full_join, by = c("identity", "Group")) %>%
+  arrange(identity, Group)
+
+#Add framework and type of agent
+df_combined <- df_combined %>%
+  mutate(
+    type = case_when(
+      Group %in% c("UP", "CP", "DP", "NMP") ~ "Person",
+      Group %in% c("UR", "CR", "DR", "NMR") ~ "Robot",
+      TRUE ~ NA_character_
+    ),
+    framework = case_when(
+      Group %in% c("UP", "UR") ~ "Utilitarianism",
+      Group %in% c("CP", "CR") ~ "Contractualism",
+      Group %in% c("DP", "DR") ~ "Deontology",
+      Group %in% c("NMP", "NMR") ~ "NonMoral",
+      TRUE ~ NA_character_
+    )
+  )
+
+```
+
+#Reference group
+```{r}
+data_long <- df_combined %>%
+  mutate(
+    framework = relevel(as.factor(framework), ref = "NonMoral"),
+    type = relevel(as.factor(type), ref = "Person")
+  )
+
+```
+
+#Reliability
+```{r}
+library(lmerTest)
+library(emmeans)
+
+# Ajustar el modelo mixto para la variable Reliability
+modelo_reliability <- lmer(Reliability ~ framework + type + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(modelo_reliability)
+confint(modelo_reliability, level = 0.95) 
+
+int_reliability <- lmer(Reliability ~ framework * type + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(int_reliability)
+confint(int_reliability, level = 0.95)
+
+emmeans_moralreliability <- emmeans(int_reliability, pairwise ~ type | framework)
+summary(emmeans_moralreliability)
+confint(emmeans_moralreliability, level = 0.95)
+
+library(ggplot2)
+library(dplyr)
+library(ggpubr)
+
+
+# Obtener los intervalos de confianza
+summary(emmeans_moralreliability, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
+
+# Extraer la tabla de emmeans
+emtab <- emmeans(emmeans_moralreliability, ~ framework | type )
+emtab <- as_tibble(emtab)
+
+type_colors <- c(
+  "Person" = "#FF637D",  
+  "Robot" = "#4682B4"  
+)
+
+emtab <- regrid(emmeans(emmeans_moralreliability, ~ framework | type)) %>%
+  as_tibble()
+
+# Graficar con límites de 1 a 7 en el eje y
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Reliability") +
+  scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+#Grafico aumentado
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Reliability") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+#Moral Trust
+```{r}
+# Ajustar el modelo mixto para la variable MoralTrust
+modelo_moraltrust <- lmer(MoralTrust ~ framework + type + acuerdo + (1 | identity), 
+                            data = data_long)
+summary(modelo_moraltrust)
+confint(modelo_moraltrust, level = 0.95)
+
+int_moraltrust <- lmer(MoralTrust ~ framework * type + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(int_moraltrust)
+confint(int_moraltrust, level = 0.95)
+
+emmeans_moraltrust <- emmeans(int_moraltrust, pairwise ~ type | framework)
+summary(emmeans_moraltrust)
+confint(emmeans_moraltrust, level = 0.95)
+
+# Obtener los intervalos de confianza
+summary(emmeans_moraltrust, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
+
+# Extraer la tabla de emmeans
+emtab <- emmeans(emmeans_moraltrust, ~ framework | type )
+emtab <- as_tibble(emtab)
+
+type_colors <- c(
+  "Person" = "#FF637D",  
+  "Robot" = "#4682B4"   
+)
+
+emtab <- regrid(emmeans(emmeans_moraltrust, ~ framework | type)) %>%
+  as_tibble()
+
+# Graficar con límites de 1 a 7 en el eje y
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Moral Trust") +
+  scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+#Gràfico aumentado
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Moral Trust") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+#Moral Agency
+```{r}
+# Ajustar el modelo mixto para la variable MoralAgency
+modelo_moralagency <- lmer(MoralAgency ~ framework + type + acuerdo + (1 | identity), 
+                            data = data_long)
+summary(modelo_moralagency)
+confint(modelo_moralagency, level = 0.95)
+
+int_moralagency <- lmer(MoralAgency ~ framework * type + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(int_moralagency)
+
+emmeans_moralagency <- emmeans(int_moralagency, pairwise ~ framework | type)
+summary(emmeans_moralagency)
+
+# Obtener los intervalos de confianza
+summary(emmeans_moralagency, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
+
+# Extraer la tabla de emmeans
+emtab <- emmeans(emmeans_moralagency, ~ framework | type )
+emtab <- as_tibble(emtab)
+
+type_colors <- c(
+  "Person" = "#FF637D",  
+  "Robot" = "#4682B4"    
+)
+
+emtab <- regrid(emmeans(emmeans_moralagency, ~ framework | type)) %>%
+  as_tibble()
+
+# Graficar con límites de 1 a 7 en el eje y
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Moral Agency") +
+  scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+#Gràfico aumentado
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Moral Agency") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+#Complexity
+```{r}
+data_long$Complexity <- as.numeric(data_long$Complexity)
+df_combined$Complexity <- as.numeric(df_combined$Complexity)
+
+# Ajustar el modelo mixto para la variable Complejidad
+modelo_Complejidad <- lmer(Complexity ~ framework + type + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(modelo_Complejidad)
+confint(modelo_Complejidad, level = 0.95)
+
+int_Complejidad <- lmer(Complexity ~ framework * type + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(int_Complejidad)
+
+emmeans_moralcomplejidad <- emmeans(int_Complejidad, pairwise ~ framework | type)
+summary(emmeans_moralcomplejidad)
+
+# Obtener los intervalos de confianza
+summary(emmeans_moralcomplejidad, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
+
+# Extraer la tabla de emmeans
+emtab <- emmeans(emmeans_moralcomplejidad, ~ framework | type )
+emtab <- as_tibble(emtab)
+
+type_colors <- c(
+  "Person" = "#FF637D",  
+  "Robot" = "#4682B4"   
+)
+
+emtab <- regrid(emmeans(emmeans_moralcomplejidad, ~ framework | type)) %>%
+  as_tibble()
+
+# Graficar con límites de 1 a 7 en el eje y
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Complexity") +
+  scale_y_continuous(limits = c(1, 7), breaks = 1:7) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+#Gràfico aumentado
+ggplot(emtab, aes(x = framework, y = emmean, color = type)) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                position = position_dodge(0.5), width = 0.25) + 
+  geom_point(size = 3, position = position_dodge(0.5), shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) +  
+  theme_minimal() + 
+  labs(x = "Framework", y = "Complexity") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+#IS
+```{r}
+#Mean IS
+
+mean_IS <- df_combined %>%
+  summarise(
+    mean_IS = mean(IS, na.rm = TRUE),
+    sd_IS = sd(IS, na.rm = TRUE)
+  )
+summary(mean_IS)
+
+
+# Ajustar el modelo mixto para la variable IS
+modelo_IS <- lmer(IS ~ framework + acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(modelo_IS)
+confint(modelo_IS, level = 0.95)
+
+int_IS <- lmer(IS ~ framework * acuerdo + (1 | identity), 
+                            data = df_combined)
+summary(int_IS)
+
+emmeans_moralIS <- emmeans(modelo_IS, pairwise ~ framework)
+summary(emmeans_moralIS)
+
+# Obtener los resultados de emmeans
+emmeans_moralIS <- emmeans(int_IS, pairwise ~ framework)
+summary(emmeans_moralIS)
+
+# Obtener los intervalos de confianza
+summary(emmeans_moralIS, confint = TRUE, scale = TRUE, transform.response = T, digits = getOption("jtools-digits", 3))
+
+# Calcular emmeans por framework
+emtab <- emmeans(emmeans_moralIS, ~ framework)
+
+# Transformar a escala original (si aplica)
+emtab <- regrid(emtab) %>% as_tibble()
+
+
+type_colors <- c(
+  "Person" = "#FF637D",  
+  "Robot" = "#4682B4"    
+)
+
+# Graficar sin usar 'type' y con escala de 0 a 100
+ggplot(emtab, aes(x = framework, y = emmean, color = "Robot")) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                width = 0.25) + 
+  geom_point(size = 3, shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) + 
+  theme_minimal() + 
+  labs(
+    x = "Framework", 
+    y = "Intentional Stance") +
+  scale_y_continuous(limits = c(0, 100), breaks = seq(0, 100, by = 10)) +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+
+# Aumentado
+ggplot(emtab, aes(x = framework, y = emmean, color = "Robot")) + 
+  geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL), 
+                width = 0.25) + 
+  geom_point(size = 3, shape = 16) +  
+  scale_color_manual(values = type_colors, name = NULL) + 
+  theme_minimal() + 
+  labs(
+    x = "Framework", 
+    y = "Intentional Stance") +
+  theme(axis.text.x = element_text(angle = 0, hjust = 1))
+```
+
+#Antropomorphism basic analysis
+```{r}
+library(mediation)
+library(lavaan)
+
+#Efecto Antropomorfismo Humano
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(modelo_antroH)
+
+emmeans_antroH <- emmeans(modelo_antroH, pairwise ~ framework)
+summary(emmeans_antroH)
+
+modelo_mediador_H <- lmer(MoralTrust ~ framework + AntroH + (1 | identity),
+                          data = df_combined)
+summary(modelo_mediador_H)
+
+modelo1 <- lm(AntroH ~ framework, data = df_combined)
+
+modelo2 <- lm(MoralTrust ~ framework + AntroH + acuerdo, data = df_combined)
+
+mediate_test <- mediate(modelo1, modelo2, treat = "framework", mediator = "AntroH", boot = TRUE, sims = 500)
+summary(mediate_test)
+
+
+
+#Efecto Antropomorfismo Robot
+modelo_antroR <- lmer(AntroR ~ framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(modelo_antroR)
+
+emmeans_antroR <- emmeans(modelo_antroR, pairwise ~ framework)
+summary(emmeans_antroR)
+
+modelo_mediador_R <- lmer(MoralTrust ~ framework + AntroR + (1 | identity),
+                          data = df_combined)
+summary(modelo_mediador_R)
+
+modelo1 <- lm(AntroR ~ framework, data = df_combined)
+
+modelo2 <- lm(MoralTrust ~ framework + AntroR + acuerdo, data = df_combined)
+
+mediate_test_R <- mediate(modelo1, modelo2, treat = "framework", mediator = "AntroR", boot = TRUE, sims = 500)
+summary(mediate_test_R)
+
+```
+
+#Correlations Antropomorphism-direct variables
+```{r}
+###############################AntroH################################
+###Correlation controlando por framework
+reliability_antroH <- lmer(Reliability ~ AntroH + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(reliability_antroH)
+confint(reliability_antroH, level = 0.95) 
+
+trust_antroH <- lmer(MoralTrust ~ AntroH + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(trust_antroH)
+confint(trust_antroH, level = 0.95) 
+
+agency_antroH <- lmer(MoralAgency ~ AntroH + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(agency_antroH)
+confint(agency_antroH, level = 0.95) 
+
+complexity_antroH <- lmer(Complexity ~ AntroH + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(complexity_antroH)
+confint(complexity_antroH, level = 0.95) 
+
+IS_antroH <- lmer(IS ~ AntroH + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(IS_antroH)
+confint(IS_antroH, level = 0.95) 
+
+#####AntroR
+
+reliability_antroR <- lmer(Reliability ~ AntroR + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(reliability_antroR)
+confint(reliability_antroR, level = 0.95) 
+
+trust_antroR <- lmer(MoralTrust ~ AntroR + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(trust_antroR)
+confint(trust_antroR, level = 0.95) 
+
+agency_antroR <- lmer(MoralAgency ~ AntroR + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(agency_antroR)
+confint(agency_antroHR, level = 0.95) 
+
+complexity_antroR <- lmer(Complexity ~ AntroR + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(complexity_antroR)
+confint(complexity_antroR, level = 0.95)
+
+IS_antroR <- lmer(IS ~ AntroR + framework + acuerdo + (1 | identity),
+                      data = df_combined)
+summary(IS_antroR)
+confint(IS_antroR, level = 0.95)
+
+####Correlation sin contratoar por framework
+#Acuerdo AntroH
+cor.test(df_combined$acuerdo[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
+
+#Reliability AntroH
+cor.test(df_combined$Reliability[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
+
+#Moral Trust AntroH
+cor.test(df_combined$MoralTrust[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
+
+#Moral Agency AntroH
+cor.test(df_combined$MoralAgency[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
+
+#Complexity AntroH
+df_combined$Complexity <- as.numeric(as.character(df_combined$Complexity))
+cor.test(df_combined$Complexity[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
+
+#IS AntroH
+cor.test(df_combined$IS[df_combined$type == "Robot"], df_combined$AntroH[df_combined$type == "Robot"])
+
+###############################AntroR################################
+
+#Acuerdo AntroR
+cor.test(df_combined$acuerdo[df_combined$type == "Robot"], df_combined$AntroR[df_combined$type == "Robot"])
+
+#Reliability AntroR
+cor.test(df_combined$Reliability[df_combined$type == "Robot"], df_combined$AntroR[df_combined$type == "Robot"])
+
+#Moral Trust AntroR
+cor.test(df_combined$MoralTrust[df_combined$type == "Robot"], df_combined$AntroR[df_combined$type == "Robot"])
+
+#Moral Agency AntroR
+cor.test(df_combined$MoralAgency[df_combined$type == "Robot"], df_combined$AntroR[df_combined$type == "Robot"])
+
+#Complexity AntroR
+df_combined$Complexity <- as.numeric(as.character(df_combined$Complexity))
+cor.test(df_combined$Complexity[df_combined$type == "Robot"], df_combined$AntroR[df_combined$type == "Robot"])
+
+#IS AntroR
+cor.test(df_combined$IS[df_combined$type == "Robot"], df_combined$AntroR[df_combined$type == "Robot"])
+
+#########Table#####################
+library(dplyr)
+library(tidyr)
+
+cor_results <- data.frame(
+  Variable = character(),
+  Correlation = numeric(),
+  Antro_Type = character(),
+  stringsAsFactors = FALSE
+)
+
+# Define the variables to correlate
+variables <- c("acuerdo", "Reliability", "MoralTrust", "MoralAgency", "Complexity", "IS")
+
+# Run correlations and store results
+run_correlation <- function(var, target) {
+  test <- cor.test(df_combined[[var]][df_combined$type == "Robot"], 
+                   df_combined[[target]][df_combined$type == "Robot"])
+  return(data.frame(Variable = var, Correlation = test$estimate, Antro_Type = target))
+}
+
+# Run correlations for AntroH and AntroR
+for (var in variables) {
+  cor_results <- bind_rows(cor_results, run_correlation(var, "AntroH"))
+  cor_results <- bind_rows(cor_results, run_correlation(var, "AntroR"))
+}
+
+# Table
+corr_table <- cor_results %>% arrange(Antro_Type, Variable)
+summary(corr_table)
+
+```
+
+
+#Mediation Analysis Contractualism vs Utilitarianism
+```{r}
+detach("package:lmerTest", unload=TRUE)
+library(mediation)
+#Reliability
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Utilitarianism"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_reli <- lmer(Reliability ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_reli)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_reli, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#MoralTrust
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Utilitarianism"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_trust <- lmer(MoralTrust ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_trust)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_trust, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#MoralAgency
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Utilitarianism"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_agency <- lmer(MoralAgency ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_agency)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_agency, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+```
+
+#Mediation Analysis Contractualism vs Deontology
+```{r}
+#detach("package:lmerTest", unload=TRUE)
+#Reliability
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_reli <- lmer(Reliability ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_reli)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_reli, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#MoralTrust
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_trust <- lmer(MoralTrust ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_trust)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_trust, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#MoralAgency
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_agency <- lmer(MoralAgency ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_agency)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_agency, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+```
+
+#Mediation Analysis Deontology vs Utilitarianism
+```{r}
+#detach("package:lmerTest", unload=TRUE)
+#Reliability
+df2 <- df_combined[(df_combined$framework=="Utilitarianism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_reli <- lmer(Reliability ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_reli)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_reli, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#MoralTrust
+df2 <- df_combined[(df_combined$framework=="Utilitarianism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_trust <- lmer(MoralTrust ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_trust)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_trust, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#MoralAgency
+df2 <- df_combined[(df_combined$framework=="Utilitarianism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroH <- lmer(AntroH ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroH)
+ 
+modelo_mediador_H_agency <- lmer(MoralAgency ~ framework + AntroH + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_H_agency)
+ 
+mediate_test <- mediate(modelo_antroH, modelo_mediador_H_agency, treat = "framework",
+    mediator = "AntroH", boot = FALSE, sims = 2000)
+summary(mediate_test)
+```
+
+#Mediation Analysis Robotization Contractualism vs Utilitarianism
+```{r}
+#Reliability
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Utilitarianism"),]
+ 
+modelo_antroR <- lmer(AntroR ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroR)
+ 
+modelo_mediador_R_reli <- lmer(Reliability ~ framework + AntroR + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_R_reli)
+ 
+mediate_test <- mediate(modelo_antroR, modelo_mediador_R_reli, treat = "framework",
+    mediator = "AntroR", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#Reliability
+df2 <- df_combined[(df_combined$framework=="Contractualism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroR <- lmer(AntroR ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroR)
+ 
+modelo_mediador_R_reli <- lmer(Reliability ~ framework + AntroR + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_R_reli)
+ 
+mediate_test <- mediate(modelo_antroR, modelo_mediador_R_reli, treat = "framework",
+    mediator = "AntroR", boot = FALSE, sims = 2000)
+summary(mediate_test)
+
+#Reliability
+df2 <- df_combined[(df_combined$framework=="Utilitarianism" | df_combined$framework=="Deontology"),]
+ 
+modelo_antroR <- lmer(AntroR ~ framework + acuerdo + (1 | identity),
+    data = df2)
+sum <- summary(modelo_antroR)
+ 
+modelo_mediador_R_reli <- lmer(Reliability ~ framework + AntroR + acuerdo + (1 | identity),
+    data = df2)
+summary(modelo_mediador_R_reli)
+ 
+mediate_test <- mediate(modelo_antroR, modelo_mediador_R_reli, treat = "framework",
+    mediator = "AntroR", boot = FALSE, sims = 2000)
+summary(mediate_test)
+```
+
